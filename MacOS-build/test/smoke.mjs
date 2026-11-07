@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Smoke test of the desktop app: launch it, open lorenz.ode the way Finder
 // does (the app's 'open-file' event), integrate (Initialconds, Go), export the
-// data and check it, and take screenshots. Writes everything to smoke-out/:
+// data and check it, and take screenshots. The example's `@ runnow=1` line is
+// removed, so XPP draws nothing until Go: that shows the keys reach XPP. Writes everything to smoke-out/:
 // result.json, 1-start.png, 2-model.png, 3-integrated.png, data.csv.
 //
 //   node test/smoke.mjs                 run from source (electron .)
@@ -9,7 +10,7 @@
 //
 // Exit code 0 = all checks passed.
 import { _electron as electron } from 'playwright'
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,7 +28,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // a copy of the example outside the app, like a file the user double-clicks
 const work = mkdtempSync(join(tmpdir(), 'xpp-smoke-'))
 const ode = join(work, 'lorenz.ode')
-copyFileSync(join(here, 'site', 'odes', 'ode', 'lorenz.ode'), ode)
+const src = readFileSync(join(here, 'site', 'odes', 'ode', 'lorenz.ode'), 'utf8')
+if (!/^@ *runnow=1 *$/m.test(src)) throw new Error('lorenz.ode no longer has "@ runnow=1"; update the test')
+writeFileSync(ode, src.replace(/^@ *runnow=1 *\n/m, ''))
 
 const app = await electron.launch(
   process.env.XPP_APP
@@ -54,6 +57,8 @@ try {
   check('XPP runs the JSPI build', (await page.evaluate(() => window.xpp.engine)) === 'jspi', await page.evaluate(() => window.xpp.engine))
   await sleep(1500)
   await page.screenshot({ path: join(out, '2-model.png') })
+  const before = await page.evaluate(() => window.xpp.writeCsv('before.csv'))
+  check('nothing computed before Go', before <= 1, { rows: before })
 
   // Initialconds -> Go
   await page.evaluate(() => {
@@ -70,7 +75,7 @@ try {
   writeFileSync(join(out, 'data.csv'), csv)
   const lines = csv.trim().split('\n')
   const last = lines.at(-1).split(',').map(Number)
-  check('integration produced data', rows > 100, { rows, header: lines[0] })
+  check('Initialconds -> Go integrated (keys reach XPP)', rows > 100, { rows, header: lines[0] })
   check('data is finite and bounded (Lorenz attractor)', last.every(Number.isFinite) && last.slice(1).every((v) => Math.abs(v) < 100), lines.at(-1))
   result.ok = Object.values(result.checks).every((c) => c.pass)
 } catch (e) {

@@ -3,3 +3,4 @@ site/
 build/
 out/
 smoke-out/
+ci-screenshots/
