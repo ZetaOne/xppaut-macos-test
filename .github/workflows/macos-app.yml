@@ -11,6 +11,8 @@ name: macOS app
 
 on:
   workflow_dispatch:
+  push:
+    paths: ['MacOS-build/**', '.github/workflows/macos-app.yml']
 
 env:
   EMSDK_VERSION: 6.0.13
