@@ -1,0 +1,125 @@
+# XPPAUT desktop app for macOS (Electron, in MacOS-build/), built and
+# smoke-tested on GitHub's free macOS machines. To use it, copy this file to
+# .github/workflows/macos-app.yml in the repo, push, and start it from the
+# Actions tab ("Run workflow").
+#
+# Result (Actions run page -> Artifacts):
+#   xppaut-mac-apps     XPPAUT-<v>-arm64.dmg / -x64.dmg / .zip (ad-hoc signed)
+#   smoke-mac-arm64     screenshots + result.json from an Apple Silicon Mac
+#   smoke-mac-x64       the same from an Intel Mac
+name: macOS app
+
+on:
+  workflow_dispatch:
+
+env:
+  EMSDK_VERSION: 6.0.13
+
+jobs:
+  site:
+    name: Build the page (WebAssembly + Vite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Cache Emscripten
+        uses: actions/cache@v4
+        with:
+          path: .emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}
+      - run: scripts/setup-emsdk.sh
+      - run: npm ci
+      - run: scripts/build-web.sh
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist/
+          retention-days: 3
+
+  mac:
+    name: Package and smoke-test (Apple Silicon)
+    needs: site
+    runs-on: macos-latest # arm64
+    defaults:
+      run:
+        working-directory: MacOS-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - run: npm ci --no-audit --no-fund
+      - name: Build the .app, .dmg and .zip (arm64 + x64, ad-hoc signed)
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Signature is intact (an unsigned or broken one gives "app is damaged")
+        run: |
+          codesign --verify --deep --strict --verbose=2 out/mac-arm64/XPPAUT.app
+          codesign -dv out/mac-arm64/XPPAUT.app 2>&1 | grep -E 'Signature|Identifier|Format'
+          echo "Gatekeeper (expected: rejected, i.e. the first-launch warning):"
+          spctl --assess --type execute -vv out/mac-arm64/XPPAUT.app || true
+      - name: Smoke test (Playwright drives the packaged app)
+        run: XPP_APP="$PWD/out/mac-arm64/XPPAUT.app/Contents/MacOS/XPPAUT" node test/smoke.mjs
+      - name: Real Finder path ("open" with an .ode file), screenshot
+        if: always()
+        run: |
+          cp site/odes/ode/lorenz.ode /tmp/lorenz.ode
+          open -a "$PWD/out/mac-arm64/XPPAUT.app" /tmp/lorenz.ode
+          sleep 20
+          screencapture -x smoke-out/4-finder-open.png || true
+          pkill -x XPPAUT || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-mac-arm64
+          path: MacOS-build/smoke-out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: xppaut-mac-apps
+          path: |
+            MacOS-build/out/*.dmg
+            MacOS-build/out/*.zip
+
+  mac-intel:
+    name: Smoke-test (Intel)
+    needs: mac
+    runs-on: macos-15-intel
+    continue-on-error: true # only a check; the Intel runner label may change
+    defaults:
+      run:
+        working-directory: MacOS-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: xppaut-mac-apps
+          path: MacOS-build/apps
+      - run: npm ci --no-audit --no-fund
+      - run: npm run site
+      - name: Unpack the x64 app
+        run: |
+          zip=$(ls apps/*.zip | grep -v arm64 | head -1)
+          ditto -x -k "$zip" app-x64
+      - name: Smoke test
+        run: XPP_APP="$PWD/app-x64/XPPAUT.app/Contents/MacOS/XPPAUT" node test/smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-mac-x64
+          path: MacOS-build/smoke-out/

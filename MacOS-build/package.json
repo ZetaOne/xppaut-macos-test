@@ -1,0 +1,47 @@
+{
+  "name": "xppaut",
+  "productName": "XPPAUT",
+  "version": "1.1.0",
+  "description": "XPPAUT (WebAssembly port) as a desktop app",
+  "license": "GPL-3.0-or-later",
+  "author": "XPPAUT-Web",
+  "homepage": "https://zetaone.github.io/XPPAUT-Web/",
+  "private": true,
+  "main": "main.cjs",
+  "scripts": {
+    "site": "node scripts/copy-site.mjs",
+    "start": "npm run site && electron .",
+    "smoke": "node test/smoke.mjs",
+    "dist:mac": "npm run site && electron-builder --mac",
+    "dist:linux": "npm run site && electron-builder --linux dir"
+  },
+  "devDependencies": {
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "playwright": "1.65.0"
+  },
+  "build": {
+    "appId": "io.github.zetaone.xppautweb",
+    "productName": "XPPAUT",
+    "copyright": "GPL-3.0-or-later. XPPAUT by G. Bard Ermentrout.",
+    "directories": { "output": "out" },
+    "files": ["main.cjs", "package.json"],
+    "extraResources": [{ "from": "site", "to": "site" }],
+    "fileAssociations": [
+      { "ext": "ode", "name": "XPP model", "description": "XPP model", "role": "Editor", "mimeType": "text/plain" }
+    ],
+    "mac": {
+      "category": "public.app-category.education",
+      "icon": "build/icon.png",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": { "title": "XPPAUT ${version}" },
+    "linux": { "icon": "build/icon.png", "category": "Science" }
+  }
+}
